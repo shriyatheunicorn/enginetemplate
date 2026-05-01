@@ -9,6 +9,7 @@
 - Plan-first research: creates an explicit research plan before searching, including assumptions, evidence requirements, source-quality rules, and risky-source hints.
 - AutoBrowse-inspired learning loop: writes traces, evaluates quality, improves `strategy.md`, and runs another pass with one concrete hypothesis per iteration.
 - Claim-level evidence: extracts claim candidates from every usable source, not just page summaries.
+- Live web enrichment: records search snapshots, retrieval timestamps, content hashes, excerpt hashes, and source snippets so live-web runs are auditable after pages drift.
 - Universal-verifier stage: creates a rubric before retrieval, then separately scores research process and final report outcome after synthesis.
 - FARA/WebTailBench-style benchmark mode: runs a TSV/JSON/JSONL task suite, preserves precomputed rubrics when present, and emits JSONL plus aggregate metrics.
 - Synthesis: uses Stagehand through Browserbase Model Gateway to produce a structured brief with source IDs, claim map, confidence notes, contradictions, gaps, and follow-up questions.
@@ -80,9 +81,10 @@ Benchmark outputs:
 10. Falls back to a Stagehand browser session for pages that need JavaScript, are blocked, are too thin, or return unusable content.
 11. Runs a hot-path quality evaluation covering source count, domain diversity, claim count, missing angles, and risk flags.
 12. Writes JSON and Markdown traces for the iteration.
-13. Reads the trace with a Strategy Planner and updates `strategy.md` for the next iteration.
-14. Synthesizes the top diverse sources into a report.
-15. Verifies the process and outcome against `rubric.md`, classifies controllable vs uncontrollable failures, and writes final Markdown/JSON under both the run workspace and `output/`.
+13. Enriches accepted and rejected sources with live-web metadata: search snapshot, retrieval method, timestamps, status/content type, hashes, snippets, and fallback reasons.
+14. Reads the trace with a Strategy Planner and updates `strategy.md` for the next iteration.
+15. Synthesizes the top diverse sources into a report.
+16. Verifies the process and outcome against `rubric.md`, classifies controllable vs uncontrollable failures, and writes final Markdown/JSON under both the run workspace and `output/`.
 
 ## WHAT MAKES IT DIFFERENT
 
@@ -95,6 +97,7 @@ Most research templates are one of three shapes: search-and-summarize, multi-age
 - It can import benchmark `precomputed_rubric` data, matching the reproducibility direction used by FARA/WebTailBench.
 - It separately scores the research process and final report outcome, then classifies repairable vs access-related failures.
 - It enforces source diversity with `MAX_SOURCES_PER_DOMAIN`, reducing the common failure mode where one domain dominates the report.
+- It upgrades traceability into live web enrichment by preserving the retrieval context, snippets, and hashes behind each source.
 - It produces auditable artifacts: `plan.md`, `rubric.md`, `strategy.md`, per-iteration traces, `verification.md`, final Markdown, and final JSON.
 - It can stop early on quality thresholds or keep iterating for higher confidence.
 
@@ -117,7 +120,7 @@ This template adapts the AutoBrowse loop from site automation to research:
 - `research-workspace/<topic>-<timestamp>/traces/iteration-N.json` and `.md` files.
 - `research-workspace/<topic>-<timestamp>/verification.md` with pass/fail, process score, outcome score, unsupported claims, weak citations, and repair actions.
 - A Markdown report with methodology, executive summary, key findings, claim map, contradictions, gaps, follow-up questions, and source list.
-- A JSON file containing the topic, generated queries, scored sources, and structured report object.
+- A JSON file containing the topic, generated queries, scored sources, live-web enrichment metadata, and structured report object.
 
 ## CONFIGURATION
 
@@ -152,6 +155,7 @@ This template adapts the AutoBrowse loop from site automation to research:
 - Missing API key: verify `.env` contains `BROWSERBASE_API_KEY`.
 - Search query length: Search API queries must be 1 to 200 characters. This template trims generated queries.
 - Search result volume: Search API supports 1 to 25 results per query. This template clamps `RESULTS_PER_QUERY`.
+- Live web drift: traces and live-web enrichment make runs auditable, but exact page replay still requires external archiving if you need full raw-page snapshots.
 - Fetch API does not execute JavaScript. Thin app-shell pages should fall back to Stagehand.
 - Fetch API has a 1 MB content limit and 10 second timeout. Use browser sessions for large or slow pages.
 - More iterations cost more because each improvement pass may use Search, Fetch, browser fallback, and Model Gateway calls.

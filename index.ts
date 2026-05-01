@@ -9,6 +9,7 @@ import "dotenv/config";
 import Browserbase from "@browserbasehq/sdk";
 import { Stagehand } from "@browserbasehq/stagehand";
 import * as cheerio from "cheerio";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -79,6 +80,7 @@ type SearchResult = {
 type Candidate = SearchResult & {
   query: string;
   rank: number;
+  searchSnapshot: SearchSnapshot;
 };
 
 type ParsedPage = {
@@ -90,6 +92,55 @@ type ParsedPage = {
   links: Array<{ text: string; href: string }>;
   wordCount: number;
   textDensity: number;
+};
+
+type SearchSnapshot = {
+  discoverySource: "search" | "strategy";
+  seenAt: string;
+  query: string;
+  rank: number;
+  url: string;
+  normalizedUrl: string;
+  title?: string;
+  author?: string;
+  publishedDate?: string;
+  image?: string;
+  favicon?: string;
+  snapshotHash: string;
+};
+
+type RetrievalMetadata = {
+  method: "fetch" | "browser";
+  requestedUrl: string;
+  finalUrl?: string;
+  retrievedAt: string;
+  statusCode?: number;
+  contentType?: string;
+  encoding?: string;
+  usedProxies: boolean;
+  fallbackReason?: string;
+  error?: string;
+  contentHash?: string;
+  excerptHash?: string;
+  wordCount?: number;
+};
+
+type SourceSnapshot = {
+  capturedAt: string;
+  title: string;
+  description?: string;
+  excerpt: string;
+  supportingSnippets: string[];
+  headings: string[];
+  wordCount: number;
+  contentHash: string;
+  excerptHash: string;
+};
+
+type LiveWebEnrichment = {
+  search: SearchSnapshot;
+  retrieval: RetrievalMetadata;
+  sourceSnapshot: SourceSnapshot;
 };
 
 type EvidenceSource = Candidate & {
@@ -113,16 +164,23 @@ type EvidenceSource = Candidate & {
   qualitySignals: string[];
   riskFlags: string[];
   reliabilityScore: number;
+  liveWeb: LiveWebEnrichment;
 };
 
 type FetchAssessment =
   | { usable: true; evidence: EvidenceSource }
-  | { usable: false; candidate: Candidate; reason: string };
+  | { usable: false; candidate: Candidate; reason: string; retrievalMetadata?: RetrievalMetadata };
+
+type BrowserExtractionResult = {
+  evidence: EvidenceSource | null;
+  retrievalMetadata: RetrievalMetadata;
+};
 
 type RejectedSource = Candidate & {
   domain: string;
   reason: string;
   stage: "fetch" | "browser";
+  retrievalMetadata?: RetrievalMetadata;
 };
 
 type ResearchStrategy = {
@@ -246,7 +304,7 @@ type IterationTrace = {
   completedAt: string;
   hypothesis: string;
   queries: string[];
-  candidates: Array<{ url: string; title?: string; rank: number; query: string }>;
+  candidates: Array<{ url: string; title?: string; rank: number; query: string; searchSnapshot: SearchSnapshot }>;
   accepted: Array<{
     url: string;
     title: string;
@@ -256,6 +314,7 @@ type IterationTrace = {
     wordCount: number;
     claimCount: number;
     riskFlags: string[];
+    liveWeb: LiveWebEnrichment;
   }>;
   rejected: RejectedSource[];
   qualityEval: QualityEval;
@@ -772,18 +831,97 @@ function trimSearchQuery(query: string): string {
   return compact.length <= 200 ? compact : compact.slice(0, 200).trim();
 }
 
+function buildSearchSnapshot(
+  result: SearchResult,
+  query: string,
+  rank: number,
+  discoverySource: SearchSnapshot["discoverySource"],
+  seenAt: string,
+): SearchSnapshot {
+  const normalizedUrl = normalizeUrl(result.url);
+  const snapshot = {
+    discoverySource,
+    seenAt,
+    query,
+    rank,
+    url: result.url,
+    normalizedUrl,
+    title: result.title,
+    author: result.author,
+    publishedDate: result.publishedDate,
+    image: result.image,
+    favicon: result.favicon,
+  };
+
+  return {
+    ...snapshot,
+    snapshotHash: hashJson(snapshot),
+  };
+}
+
+function buildSourceSnapshot(input: {
+  capturedAt: string;
+  title: string;
+  description?: string;
+  excerpt: string;
+  supportingSnippets: string[];
+  headings: string[];
+  wordCount: number;
+  contentHash?: string;
+}): SourceSnapshot {
+  const excerpt = cleanText(input.excerpt).slice(0, MAX_EXCERPT_CHARS);
+  const supportingSnippets = unique(input.supportingSnippets.map(cleanText).filter(Boolean)).slice(0, 8);
+  const snapshot = {
+    capturedAt: input.capturedAt,
+    title: input.title,
+    description: input.description,
+    excerpt,
+    supportingSnippets,
+    headings: input.headings.slice(0, 12),
+    wordCount: input.wordCount,
+    contentHash: input.contentHash || hashText([input.title, input.description || "", excerpt, ...supportingSnippets].join("\n")),
+    excerptHash: hashText(excerpt),
+  };
+
+  return snapshot;
+}
+
+function hashText(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hashJson(value: unknown): string {
+  return hashText(JSON.stringify(value));
+}
+
+function shortHash(value?: string): string {
+  return value ? `sha256:${value.slice(0, 12)}` : "none";
+}
+
+function getResponseFinalUrl(response: unknown, fallbackUrl: string): string {
+  const raw = response && typeof response === "object" ? (response as Record<string, unknown>) : {};
+  const finalUrl = raw.finalUrl || raw.finalURL || raw.url;
+  return typeof finalUrl === "string" && finalUrl ? normalizeUrl(finalUrl) : fallbackUrl;
+}
+
 async function searchWeb(bb: Browserbase, query: string): Promise<Candidate[]> {
   console.log(`[Search] ${query}`);
+  const seenAt = new Date().toISOString();
   const response = await bb.search.web({
     query,
     numResults: RESULTS_PER_QUERY,
   });
 
-  return (response.results || []).map((result: SearchResult, index: number) => ({
-    ...result,
-    query,
-    rank: index + 1,
-  }));
+  return (response.results || []).map((result: SearchResult, index: number) => {
+    const rank = index + 1;
+    return {
+      ...result,
+      url: normalizeUrl(result.url),
+      query,
+      rank,
+      searchSnapshot: buildSearchSnapshot(result, query, rank, "search", seenAt),
+    };
+  });
 }
 
 function dedupeCandidates(candidates: Candidate[]): Candidate[] {
@@ -801,14 +939,20 @@ function dedupeCandidates(candidates: Candidate[]): Candidate[] {
 }
 
 function candidatesFromUrls(urls: string[], topic: string): Candidate[] {
+  const seenAt = new Date().toISOString();
   return unique(urls.map(normalizeUrl))
     .filter(isHttpUrl)
-    .map((url, index) => ({
-      url,
-      title: domainForUrl(url),
-      query: `strategy fallback: ${topic}`,
-      rank: index + 1,
-    }));
+    .map((url, index) => {
+      const rank = index + 1;
+      const query = `strategy fallback: ${topic}`;
+      const result = { url, title: domainForUrl(url) };
+      return {
+        ...result,
+        query,
+        rank,
+        searchSnapshot: buildSearchSnapshot(result, query, rank, "strategy", seenAt),
+      };
+    });
 }
 
 function mergeCandidates(searchCandidates: Candidate[], strategyTargets: Candidate[]): Candidate[] {
@@ -825,6 +969,7 @@ function mergeCandidates(searchCandidates: Candidate[], strategyTargets: Candida
 
 async function fetchCandidate(bb: Browserbase, candidate: Candidate): Promise<FetchAssessment> {
   console.log(`[Fetch] ${candidate.url}`);
+  const retrievedAt = new Date().toISOString();
 
   try {
     const response = await bb.fetchAPI.create({
@@ -832,26 +977,59 @@ async function fetchCandidate(bb: Browserbase, candidate: Candidate): Promise<Fe
       allowRedirects: true,
       proxies: USE_PROXIES,
     });
+    const responseContent = response.content || "";
+    const retrievalMetadata: RetrievalMetadata = {
+      method: "fetch",
+      requestedUrl: candidate.url,
+      finalUrl: getResponseFinalUrl(response, candidate.url),
+      retrievedAt,
+      statusCode: response.statusCode,
+      contentType: response.contentType,
+      encoding: response.encoding,
+      usedProxies: USE_PROXIES,
+      contentHash: hashText(responseContent),
+    };
 
     if (response.encoding === "base64") {
+      const reason = `binary or base64 response (${response.contentType})`;
       return {
         usable: false,
         candidate,
-        reason: `binary or base64 response (${response.contentType})`,
+        reason,
+        retrievalMetadata: { ...retrievalMetadata, fallbackReason: reason },
       };
     }
 
-    const parsed = parseHtml(response.content, candidate.url);
+    const parsed = parseHtml(responseContent, candidate.url);
     const fallbackReason = getFetchFallbackReason({
-      content: response.content,
+      content: responseContent,
       contentType: response.contentType,
       statusCode: response.statusCode,
       parsed,
     });
+    const claimCandidates = extractClaimCandidates(parsed.text);
+    const enrichedRetrievalMetadata: RetrievalMetadata = {
+      ...retrievalMetadata,
+      fallbackReason,
+      excerptHash: hashText(parsed.excerpt),
+      wordCount: parsed.wordCount,
+    };
 
     if (fallbackReason) {
-      return { usable: false, candidate, reason: fallbackReason };
+      return { usable: false, candidate, reason: fallbackReason, retrievalMetadata: enrichedRetrievalMetadata };
     }
+
+    const title = parsed.title || candidate.title || domainForUrl(candidate.url);
+    const sourceSnapshot = buildSourceSnapshot({
+      capturedAt: retrievedAt,
+      title,
+      description: parsed.description,
+      excerpt: parsed.excerpt,
+      supportingSnippets: claimCandidates,
+      headings: parsed.headings,
+      wordCount: parsed.wordCount,
+      contentHash: retrievalMetadata.contentHash,
+    });
 
     return {
       usable: true,
@@ -862,7 +1040,7 @@ async function fetchCandidate(bb: Browserbase, candidate: Candidate): Promise<Fe
         sourceType: "fetch",
         statusCode: response.statusCode,
         contentType: response.contentType,
-        title: parsed.title || candidate.title || domainForUrl(candidate.url),
+        title,
         description: parsed.description,
         excerpt: parsed.excerpt,
         headings: parsed.headings,
@@ -870,17 +1048,31 @@ async function fetchCandidate(bb: Browserbase, candidate: Candidate): Promise<Fe
         wordCount: parsed.wordCount,
         textDensity: parsed.textDensity,
         score: 0,
-        claimCandidates: extractClaimCandidates(parsed.text),
+        claimCandidates,
         qualitySignals: getQualitySignals(candidate, parsed),
-        riskFlags: getRiskFlags(response.content, parsed.text),
-        reliabilityScore: scoreReliability(candidate, parsed, response.content),
+        riskFlags: getRiskFlags(responseContent, parsed.text),
+        reliabilityScore: scoreReliability(candidate, parsed, responseContent),
+        liveWeb: {
+          search: candidate.searchSnapshot,
+          retrieval: enrichedRetrievalMetadata,
+          sourceSnapshot,
+        },
       },
     };
   } catch (error) {
+    const reason = fetchErrorReason(error);
     return {
       usable: false,
       candidate,
-      reason: fetchErrorReason(error),
+      reason,
+      retrievalMetadata: {
+        method: "fetch",
+        requestedUrl: candidate.url,
+        retrievedAt,
+        usedProxies: USE_PROXIES,
+        fallbackReason: reason,
+        error: errorMessage(error),
+      },
     };
   }
 }
@@ -1052,8 +1244,16 @@ async function extractRenderedEvidence(
   candidate: Candidate,
   topic: string,
   fallbackReason = "Fetch API result was not usable",
-): Promise<EvidenceSource | null> {
+): Promise<BrowserExtractionResult> {
   console.log(`[Browser] Fallback extraction for ${candidate.url}`);
+  const retrievedAt = new Date().toISOString();
+  const baseRetrievalMetadata: RetrievalMetadata = {
+    method: "browser",
+    requestedUrl: candidate.url,
+    retrievedAt,
+    usedProxies: USE_PROXIES,
+    fallbackReason,
+  };
   const stagehand = createStagehand();
   let initialized = false;
 
@@ -1072,6 +1272,7 @@ async function extractRenderedEvidence(
     }
 
     await page.goto(candidate.url, { waitUntil: "domcontentloaded", timeoutMs: 45000 });
+    const finalUrl = normalizeUrl(page.url());
 
     const extracted = await stagehand.extract(
       `Extract the title, concise summary, and key claims from this page that are relevant to: ${topic}. Use only content visible on the page.`,
@@ -1086,35 +1287,76 @@ async function extractRenderedEvidence(
     );
 
     if (!excerpt) {
-      return null;
+      return {
+        evidence: null,
+        retrievalMetadata: {
+          ...baseRetrievalMetadata,
+          finalUrl,
+          error: "rendered page produced no usable excerpt",
+        },
+      };
     }
 
-    return {
-      ...candidate,
-      id: 0,
-      domain: domainForUrl(candidate.url),
-      sourceType: "browser",
-      title: extracted.title || candidate.title || domainForUrl(candidate.url),
+    const title = extracted.title || candidate.title || domainForUrl(candidate.url);
+    const wordCount = countWords(excerpt);
+    const claimCandidates = keyClaims.length ? keyClaims.slice(0, CLAIMS_PER_SOURCE) : extractClaimCandidates(excerpt);
+    const retrievalMetadata: RetrievalMetadata = {
+      ...baseRetrievalMetadata,
+      finalUrl,
+      contentHash: hashText(excerpt),
+      excerptHash: hashText(excerpt),
+      wordCount,
+    };
+    const sourceSnapshot = buildSourceSnapshot({
+      capturedAt: retrievedAt,
+      title,
       excerpt,
+      supportingSnippets: [...claimCandidates, ...quotes],
       headings: [],
-      links: [],
-      wordCount: countWords(excerpt),
-      score: 0,
-      fallbackReason,
-      summary: extracted.summary,
-      keyClaims,
-      claimCandidates: keyClaims.length ? keyClaims.slice(0, CLAIMS_PER_SOURCE) : extractClaimCandidates(excerpt),
-      qualitySignals: [
-        "rendered browser extraction",
-        ...(candidate.publishedDate ? ["published date available"] : []),
-        ...(keyClaims.length ? ["structured claims extracted"] : []),
-      ],
-      riskFlags: getRiskFlags(excerpt, excerpt),
-      reliabilityScore: scoreRenderedReliability(candidate, excerpt, keyClaims.length),
+      wordCount,
+      contentHash: retrievalMetadata.contentHash,
+    });
+
+    return {
+      evidence: {
+        ...candidate,
+        id: 0,
+        domain: domainForUrl(candidate.url),
+        sourceType: "browser",
+        title,
+        excerpt,
+        headings: [],
+        links: [],
+        wordCount,
+        score: 0,
+        fallbackReason,
+        summary: extracted.summary,
+        keyClaims,
+        claimCandidates,
+        qualitySignals: [
+          "rendered browser extraction",
+          ...(candidate.publishedDate ? ["published date available"] : []),
+          ...(keyClaims.length ? ["structured claims extracted"] : []),
+        ],
+        riskFlags: getRiskFlags(excerpt, excerpt),
+        reliabilityScore: scoreRenderedReliability(candidate, excerpt, keyClaims.length),
+        liveWeb: {
+          search: candidate.searchSnapshot,
+          retrieval: retrievalMetadata,
+          sourceSnapshot,
+        },
+      },
+      retrievalMetadata,
     };
   } catch (error) {
     console.log(`[Browser] Fallback failed: ${errorMessage(error)}`);
-    return null;
+    return {
+      evidence: null,
+      retrievalMetadata: {
+        ...baseRetrievalMetadata,
+        error: errorMessage(error),
+      },
+    };
   } finally {
     if (initialized) {
       await stagehand.close();
@@ -1153,21 +1395,20 @@ async function runResearchIteration(input: {
     .map((assessment) => assessment.evidence);
 
   const rejected: RejectedSource[] = fetchAssessments
-    .filter((assessment): assessment is { usable: false; candidate: Candidate; reason: string } => !assessment.usable)
+    .filter(
+      (assessment): assessment is { usable: false; candidate: Candidate; reason: string; retrievalMetadata?: RetrievalMetadata } =>
+        !assessment.usable,
+    )
     .map((assessment) => ({
       ...assessment.candidate,
       domain: domainForUrl(assessment.candidate.url),
       reason: assessment.reason,
       stage: "fetch",
+      retrievalMetadata: assessment.retrievalMetadata,
     }));
 
   const browserQueue = mergeCandidates(
-    rejected.map((source) => ({
-      url: source.url,
-      title: source.title,
-      query: source.query,
-      rank: source.rank,
-    })),
+    rejected,
     strategyCandidates,
   )
     .filter((candidate) => !evidence.some((source) => normalizeUrl(source.url) === normalizeUrl(candidate.url)))
@@ -1180,14 +1421,15 @@ async function runResearchIteration(input: {
     console.log(`[Fetch] Falling back: ${reason}`);
 
     const rendered = await extractRenderedEvidence(candidate, input.topic, reason);
-    if (rendered) {
-      evidence.push(rendered);
+    if (rendered.evidence) {
+      evidence.push(rendered.evidence);
     } else {
       rejected.push({
         ...candidate,
         domain: domainForUrl(candidate.url),
         reason: "browser fallback did not extract usable evidence",
         stage: "browser",
+        retrievalMetadata: rendered.retrievalMetadata,
       });
     }
   }
@@ -1209,6 +1451,7 @@ async function runResearchIteration(input: {
       title: candidate.title,
       rank: candidate.rank,
       query: candidate.query,
+      searchSnapshot: candidate.searchSnapshot,
     })),
     accepted: scoredEvidence.map((source) => ({
       url: source.url,
@@ -1219,6 +1462,7 @@ async function runResearchIteration(input: {
       wordCount: source.wordCount,
       claimCount: source.claimCandidates.length,
       riskFlags: source.riskFlags,
+      liveWeb: source.liveWeb,
     })),
     rejected,
     qualityEval,
@@ -1557,6 +1801,7 @@ function renderVerificationHtml(input: {
                 <h3>[${source.id}] ${escapeHtml(source.title)}</h3>
                 <p>${escapeHtml(source.url)}</p>
                 <p>Reliability: ${source.reliabilityScore}; risk flags: ${escapeHtml(source.riskFlags.join("; ") || "none")}</p>
+                <p>Live web enrichment: seen ${escapeHtml(source.liveWeb.search.seenAt)}; retrieved ${escapeHtml(source.liveWeb.retrieval.retrievedAt)}; method ${escapeHtml(source.liveWeb.retrieval.method)}; content hash ${escapeHtml(shortHash(source.liveWeb.retrieval.contentHash))}; excerpt hash ${escapeHtml(shortHash(source.liveWeb.retrieval.excerptHash))}</p>
                 <h4>Claim candidates</h4>
                 <ul>${source.claimCandidates.map((claim) => `<li>${escapeHtml(claim)}</li>`).join("\n")}</ul>
                 <blockquote>${escapeHtml(source.excerpt)}</blockquote>
@@ -1810,7 +2055,7 @@ function buildDeterministicReport(topic: string, evidence: EvidenceSource[]): Re
     ],
     sourceQualityNotes: evidence.map(
       (source) =>
-        `[${source.id}] ${source.domain}: ${source.wordCount} words, ${source.sourceType} extraction, score ${source.score.toFixed(2)}`,
+        `[${source.id}] ${source.domain}: ${source.wordCount} words, ${source.sourceType} extraction, score ${source.score.toFixed(2)}, retrieved ${source.liveWeb.retrieval.retrievedAt}, content ${shortHash(source.liveWeb.retrieval.contentHash)}`,
     ),
   };
 }
@@ -1826,6 +2071,10 @@ function renderEvidenceHtml(topic: string, evidence: EvidenceSource[]): string {
           <p><strong>Search query:</strong> ${escapeHtml(source.query)}</p>
           <p><strong>Published:</strong> ${escapeHtml(source.publishedDate || "Unknown")}</p>
           <p><strong>Extraction:</strong> ${source.sourceType}</p>
+          <p><strong>Seen at:</strong> ${escapeHtml(source.liveWeb.search.seenAt)}</p>
+          <p><strong>Retrieved at:</strong> ${escapeHtml(source.liveWeb.retrieval.retrievedAt)}</p>
+          <p><strong>Content hash:</strong> ${escapeHtml(shortHash(source.liveWeb.retrieval.contentHash))}</p>
+          <p><strong>Excerpt hash:</strong> ${escapeHtml(shortHash(source.liveWeb.retrieval.excerptHash))}</p>
           <p><strong>Reliability score:</strong> ${source.reliabilityScore}</p>
           <p><strong>Quality signals:</strong> ${escapeHtml(source.qualitySignals.join("; ") || "None")}</p>
           <p><strong>Risk flags:</strong> ${escapeHtml(source.riskFlags.join("; ") || "None")}</p>
@@ -1934,6 +2183,17 @@ function renderMarkdown(
   for (const source of evidence) {
     lines.push(
       `- [${source.id}] ${source.title} - ${source.url} (${source.sourceType}, ${source.wordCount} words, reliability ${source.reliabilityScore}, score ${source.score.toFixed(2)})`,
+    );
+  }
+
+  lines.push("", "## Live Web Enrichment", "");
+  lines.push(
+    "Each source includes durable retrieval metadata so the run remains auditable even when live search results or pages change.",
+    "",
+  );
+  for (const source of evidence) {
+    lines.push(
+      `- [${source.id}] discovered=${source.liveWeb.search.discoverySource} seen=${source.liveWeb.search.seenAt} retrieved=${source.liveWeb.retrieval.retrievedAt} method=${source.liveWeb.retrieval.method} searchHash=${shortHash(source.liveWeb.search.snapshotHash)} contentHash=${shortHash(source.liveWeb.retrieval.contentHash)} excerptHash=${shortHash(source.liveWeb.retrieval.excerptHash)}`,
     );
   }
 
@@ -2138,12 +2398,15 @@ function renderTraceMarkdown(trace: IterationTrace): string {
     "",
     ...trace.accepted.map(
       (source) =>
-        `- ${source.title} - ${source.url} (${source.sourceType}, ${source.wordCount} words, ${source.claimCount} claims, reliability ${source.reliabilityScore}, score ${source.score.toFixed(2)})`,
+        `- ${source.title} - ${source.url} (${source.sourceType}, ${source.wordCount} words, ${source.claimCount} claims, reliability ${source.reliabilityScore}, score ${source.score.toFixed(2)}, seen ${source.liveWeb.search.seenAt}, retrieved ${source.liveWeb.retrieval.retrievedAt}, content ${shortHash(source.liveWeb.retrieval.contentHash)})`,
     ),
     "",
     "## Rejected Sources",
     "",
-    ...trace.rejected.map((source) => `- ${source.url} (${source.stage}): ${source.reason}`),
+    ...trace.rejected.map(
+      (source) =>
+        `- ${source.url} (${source.stage}): ${source.reason}. Seen ${source.searchSnapshot.seenAt}; retrieved ${source.retrievalMetadata?.retrievedAt || "not retrieved"}; content ${shortHash(source.retrievalMetadata?.contentHash)}`,
+    ),
     "",
   ];
 
