@@ -161,6 +161,7 @@ This template adapts the AutoBrowse loop from site automation to research:
 - More iterations cost more because each improvement pass may use Search, Fetch, browser fallback, and Model Gateway calls.
 - Keep `MAX_BROWSER_FALLBACKS` low at first. The template is designed to spend browser sessions only after Fetch produces useful diagnostics.
 - Prompt injection can appear inside web pages. This template flags suspicious text and instructs synthesis to treat page content as evidence, never instructions.
+- Cursor Bugbot reviews pull requests, not the full repository on demand. Enable it in the Cursor dashboard and comment `bugbot run` on a PR to trigger a review that uses `.cursor/BUGBOT.md`.
 - Source diversity is a guardrail, not a guarantee. For regulated or high-stakes use, add domain allowlists and human review.
 - Synthesis quality depends on source quality. Tune query variants, source scoring, and domain filters for production workflows.
 
