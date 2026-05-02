@@ -54,7 +54,9 @@ const JS_REQUIRED_PATTERNS = [
   /this (site|page|app) requires javascript/i,
   /checking your browser/i,
   /cf-browser-verification/i,
-  /cloudflare/i,
+  /cloudflare ray id/i,
+  /attention required!.*cloudflare/i,
+  /ddos protection by cloudflare/i,
 ];
 
 const PROMPT_INJECTION_PATTERNS = [
@@ -2127,8 +2129,14 @@ function renderMarkdown(
     "",
   ];
 
+  for (const finding of report.keyFindings) {
+    const citations = finding.sourceIds.map((id) => `[${id}]`).join(", ");
+    lines.push(`- ${finding.finding} Sources: ${citations}. Confidence: ${finding.confidence}.`);
+  }
+
   if (verification) {
     lines.push(
+      "",
       "## Verification",
       "",
       `Pass: ${verification.pass}`,
@@ -2143,11 +2151,6 @@ function renderMarkdown(
     if (!verification.pass && verification.repairActions.length) {
       lines.push("Repair actions:", ...verification.repairActions.map((item) => `- ${item}`), "");
     }
-  }
-
-  for (const finding of report.keyFindings) {
-    const citations = finding.sourceIds.map((id) => `[${id}]`).join(", ");
-    lines.push(`- ${finding.finding} Sources: ${citations}. Confidence: ${finding.confidence}.`);
   }
 
   lines.push("", "## Claim Map", "");
