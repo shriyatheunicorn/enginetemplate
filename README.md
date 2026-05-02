@@ -150,6 +150,26 @@ This template adapts the AutoBrowse loop from site automation to research:
 - `BENCH_OUTPUT_DIR`: directory for benchmark JSONL and summary files. Default: `bench-output`.
 - `BENCH_SUCCESS_CRITERION`: `outcome`, `process`, or `both`. Default: `outcome`.
 
+## RAILWAY DEPLOYMENT
+
+This repo includes a small web server in `server.ts` and a `railway.json` start command.
+
+1. Create a new Railway project from this GitHub repo.
+2. Add `BROWSERBASE_API_KEY` in the Railway service Variables tab.
+3. Start command is already set to `npm run web` by `railway.json`.
+4. For a lower-cost first deploy, set these Railway variables:
+   - `RESEARCH_ITERATIONS=1`
+   - `NUM_QUERIES=2`
+   - `RESULTS_PER_QUERY=3`
+   - `MAX_FETCHES=4`
+   - `MAX_BROWSER_FALLBACKS=1`
+   - `USE_RESEARCH_PLANNER=false`
+   - `USE_STRATEGY_PLANNER=false`
+   - `USE_BROWSER_SYNTHESIS=false`
+   - `USE_VERIFIER=false`
+
+Railway provides `PORT` automatically. The web server exposes `/health` for health checks.
+
 ## COMMON PITFALLS
 
 - Missing API key: verify `.env` contains `BROWSERBASE_API_KEY`.

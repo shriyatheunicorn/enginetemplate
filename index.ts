@@ -12,6 +12,7 @@ import * as cheerio from "cheerio";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { z } from "zod";
 
 const DEFAULT_TOPIC = "What changed in browser automation platforms in 2026?";
@@ -2873,7 +2874,7 @@ function slugify(value: string): string {
   return slug || "deep-research";
 }
 
-async function runResearchTask(input: {
+export async function runResearchTask(input: {
   topic: string;
   runId?: string;
   externalRubric?: unknown;
@@ -3021,17 +3022,19 @@ async function main(): Promise<void> {
   console.log(`JSON: ${result.paths.jsonPath}`);
 }
 
-main().catch((error) => {
-  console.error("Error:", errorMessage(error));
-  console.error("");
-  console.error("Common issues:");
-  console.error("  - Check .env has BROWSERBASE_API_KEY");
-  console.error("  - Set RESEARCH_ITERATIONS=1 for the cheapest possible run");
-  console.error("  - Reduce RESULTS_PER_QUERY or MAX_FETCHES if rate limited");
-  console.error("  - Increase MAX_BROWSER_FALLBACKS for JS-heavy topics");
-  console.error("  - Set USE_STRATEGY_PLANNER=false to skip trace-based strategy improvement");
-  console.error("  - Set USE_BROWSER_SYNTHESIS=false to skip final browser synthesis");
-  console.error("  - Set USE_VERIFIER=false to skip rubric generation and report verification");
-  console.error("  - Set BENCH_TASK_LIMIT=1 when testing a large benchmark file");
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error("Error:", errorMessage(error));
+    console.error("");
+    console.error("Common issues:");
+    console.error("  - Check .env has BROWSERBASE_API_KEY");
+    console.error("  - Set RESEARCH_ITERATIONS=1 for the cheapest possible run");
+    console.error("  - Reduce RESULTS_PER_QUERY or MAX_FETCHES if rate limited");
+    console.error("  - Increase MAX_BROWSER_FALLBACKS for JS-heavy topics");
+    console.error("  - Set USE_STRATEGY_PLANNER=false to skip trace-based strategy improvement");
+    console.error("  - Set USE_BROWSER_SYNTHESIS=false to skip final browser synthesis");
+    console.error("  - Set USE_VERIFIER=false to skip rubric generation and report verification");
+    console.error("  - Set BENCH_TASK_LIMIT=1 when testing a large benchmark file");
+    process.exit(1);
+  });
+}
