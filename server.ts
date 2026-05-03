@@ -1,0 +1,353 @@
+import "dotenv/config";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { runResearchTask } from "./index.js";
+
+const PORT = Number.parseInt(process.env.PORT || "3000", 10);
+const MAX_BODY_BYTES = 16_384;
+
+let activeRun = false;
+
+const server = createServer(async (request, response) => {
+  try {
+    if (request.method === "GET" && request.url === "/health") {
+      return sendJson(response, 200, { ok: true });
+    }
+
+    if (request.method === "GET" && (request.url === "/" || request.url === "/index.html")) {
+      return sendHtml(response, 200, renderPage());
+    }
+
+    if (request.method === "POST" && request.url === "/research") {
+      return handleResearch(request, response);
+    }
+
+    return sendHtml(response, 404, renderPage({ error: "Not found." }));
+  } catch (error) {
+    return sendHtml(response, 500, renderPage({ error: errorMessage(error) }));
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`Deep research web server listening on http://localhost:${PORT}`);
+});
+
+async function handleResearch(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  if (activeRun) {
+    return sendHtml(response, 409, renderPage({ error: "A research run is already in progress." }));
+  }
+
+  if (!process.env.BROWSERBASE_API_KEY) {
+    return sendHtml(response, 500, renderPage({ error: "Missing BROWSERBASE_API_KEY." }));
+  }
+
+  const body = await readRequestBody(request);
+  const params = new URLSearchParams(body);
+  const topic = cleanTopic(params.get("topic") || "");
+
+  if (!topic) {
+    return sendHtml(response, 400, renderPage({ error: "Enter a research topic." }));
+  }
+
+  activeRun = true;
+  try {
+    const startedAt = Date.now();
+    const result = await runResearchTask({
+      topic,
+      runId: `web-${Date.now()}`,
+    });
+    return sendHtml(response, 200, renderPage({ result, durationSec: Math.round((Date.now() - startedAt) / 1000) }));
+  } catch (error) {
+    return sendHtml(response, 500, renderPage({ topic, error: errorMessage(error) }));
+  } finally {
+    activeRun = false;
+  }
+}
+
+function renderPage(input: {
+  topic?: string;
+  error?: string;
+  result?: Awaited<ReturnType<typeof runResearchTask>>;
+  durationSec?: number;
+} = {}): string {
+  const topic = input.topic || input.result?.topic || "";
+  const result = input.result;
+  const latestQuality = result?.traces[result.traces.length - 1]?.qualityEval;
+  const verification = result?.verification;
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deep Research Agent</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f3;
+        --ink: #171a1f;
+        --muted: #5d6675;
+        --line: #d9ded4;
+        --panel: #ffffff;
+        --accent: #176b57;
+        --accent-dark: #0f4f41;
+        --warn: #8a4b00;
+        --error: #a52828;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+      header {
+        border-bottom: 1px solid var(--line);
+        background: #ffffff;
+      }
+      main, .bar {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+      }
+      .bar {
+        min-height: 68px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 20px; font-weight: 700; }
+      h2 { font-size: 18px; margin-bottom: 14px; }
+      h3 { font-size: 15px; margin-bottom: 8px; }
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      main {
+        padding: 28px 0 48px;
+        display: grid;
+        gap: 24px;
+      }
+      form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+      }
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+      }
+      input {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid #cbd2c7;
+        border-radius: 6px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        padding: 0 12px;
+      }
+      button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        padding: 0 16px;
+        cursor: pointer;
+      }
+      button:hover { background: var(--accent-dark); }
+      section {
+        border-top: 1px solid var(--line);
+        padding-top: 22px;
+      }
+      .notice {
+        border-left: 4px solid var(--error);
+        background: #fff5f5;
+        color: var(--error);
+        padding: 12px 14px;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .metric, .source, .finding, .claim {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 14px;
+      }
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .metric strong {
+        display: block;
+        font-size: 24px;
+        margin-top: 2px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .list {
+        display: grid;
+        gap: 12px;
+      }
+      .muted { color: var(--muted); }
+      .pass { color: var(--accent-dark); }
+      .fail { color: var(--warn); }
+      a { color: var(--accent-dark); overflow-wrap: anywhere; }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #111827;
+        color: #f9fafb;
+        border-radius: 6px;
+        padding: 14px;
+        font-size: 13px;
+      }
+      @media (max-width: 760px) {
+        form, .grid, .metrics {
+          grid-template-columns: 1fr;
+        }
+        .bar {
+          align-items: flex-start;
+          flex-direction: column;
+          justify-content: center;
+          padding: 16px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>Deep Research Agent</h1>
+        <p class="status">${activeRun ? "Run in progress" : "Ready"}</p>
+      </div>
+    </header>
+    <main>
+      <form method="post" action="/research">
+        <label>
+          Research topic
+          <input name="topic" value="${escapeHtml(topic)}" maxlength="300" required />
+        </label>
+        <button type="submit">Run research</button>
+      </form>
+      ${input.error ? `<div class="notice">${escapeHtml(input.error)}</div>` : ""}
+      ${
+        result
+          ? `<section>
+              <h2>${escapeHtml(result.report.title)}</h2>
+              <div class="metrics">
+                <div class="metric"><span>Duration</span><strong>${input.durationSec || 0}s</strong></div>
+                <div class="metric"><span>Sources</span><strong>${result.evidence.length}</strong></div>
+                <div class="metric"><span>Domains</span><strong>${latestQuality?.distinctDomains || 0}</strong></div>
+                <div class="metric"><span>Overall</span><strong>${verification?.overallScore ?? "n/a"}</strong></div>
+              </div>
+            </section>
+            <section>
+              <h2>Summary</h2>
+              <p>${escapeHtml(result.report.executiveSummary)}</p>
+            </section>
+            <section>
+              <h2>Verification</h2>
+              <p class="${verification?.pass ? "pass" : "fail"}">Pass: ${verification?.pass ? "true" : "false"}</p>
+              <p class="muted">${escapeHtml(verification?.summary || "")}</p>
+            </section>
+            <section>
+              <h2>Key Findings</h2>
+              <div class="list">
+                ${result.report.keyFindings
+                  .map(
+                    (finding) => `<div class="finding">
+                      <h3>${escapeHtml(finding.confidence)} confidence</h3>
+                      <p>${escapeHtml(finding.finding)}</p>
+                      <p class="muted">Sources: ${finding.sourceIds.map((id) => `[${id}]`).join(", ") || "none"}</p>
+                    </div>`,
+                  )
+                  .join("")}
+              </div>
+            </section>
+            <section>
+              <h2>Sources</h2>
+              <div class="grid">
+                ${result.evidence
+                  .map(
+                    (source) => `<div class="source">
+                      <h3>[${source.id}] ${escapeHtml(source.title)}</h3>
+                      <p><a href="${escapeHtml(source.url)}">${escapeHtml(source.domain)}</a></p>
+                      <p class="muted">${escapeHtml(source.sourceType)} | ${source.wordCount} words | reliability ${source.reliabilityScore}</p>
+                    </div>`,
+                  )
+                  .join("")}
+              </div>
+            </section>
+            <section>
+              <h2>Artifacts</h2>
+              <pre>${escapeHtml(JSON.stringify({ workspace: result.workspace.root, markdown: result.paths.markdownPath, json: result.paths.jsonPath }, null, 2))}</pre>
+            </section>`
+          : ""
+      }
+    </main>
+  </body>
+</html>`;
+}
+
+function cleanTopic(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
+function readRequestBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > MAX_BODY_BYTES) {
+        request.destroy();
+        reject(new Error("Request body is too large."));
+      }
+    });
+    request.on("end", () => resolve(body));
+    request.on("error", reject);
+  });
+}
+
+function sendHtml(response: ServerResponse, statusCode: number, html: string): void {
+  response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  response.end(html);
+}
+
+function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(payload));
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
