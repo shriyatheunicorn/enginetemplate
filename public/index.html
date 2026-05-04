@@ -249,6 +249,7 @@
 
       .command-panel,
       .brief-panel,
+      .explain-panel,
       .panel,
       .metric-card,
       .timeline,
@@ -285,6 +286,99 @@
       .brief-panel p {
         color: var(--muted);
         max-width: 1060px;
+      }
+
+      .explain-panel {
+        padding: 18px;
+        box-shadow: none;
+        display: grid;
+        gap: 14px;
+      }
+
+      .explain-heading {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .explain-heading h2 {
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .explain-heading p {
+        color: var(--muted);
+        font-size: 13px;
+        max-width: 680px;
+      }
+
+      .explain-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      details {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface-2);
+        padding: 0;
+      }
+
+      details[open] {
+        border-color: #b8d7ca;
+        background: #f4faf7;
+      }
+
+      summary {
+        min-height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--ink);
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 850;
+        padding: 0 12px;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary::after {
+        content: "+";
+        color: var(--accent);
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      details[open] summary::after {
+        content: "-";
+      }
+
+      .explain-body {
+        border-top: 1px solid var(--line);
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .explain-body p {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .trust-note {
+        border-left: 3px solid var(--accent);
+        background: #ffffff;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 700;
+        padding: 10px 12px;
       }
 
       form {
@@ -578,7 +672,8 @@
 
         .metrics,
         .timeline,
-        .summary-grid {
+        .summary-grid,
+        .explain-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
@@ -598,8 +693,13 @@
         .metrics,
         .timeline,
         .summary-grid,
+        .explain-grid,
         .side-nav {
           grid-template-columns: 1fr;
+        }
+
+        .explain-heading {
+          display: grid;
         }
 
         .run-button {
@@ -666,6 +766,60 @@
               can produce higher-trust research faster without manually opening dozens of tabs or losing track of why an
               answer is credible.
             </p>
+          </section>
+
+          <section class="explain-panel" aria-labelledby="explain-heading">
+            <div class="explain-heading">
+              <div>
+                <h2 id="explain-heading">How the engine works</h2>
+                <p>Open each stage to see what it contributes to the research pipeline.</p>
+              </div>
+            </div>
+            <div class="explain-grid">
+              <details>
+                <summary>Search</summary>
+                <div class="explain-body">
+                  <p>Uses Browserbase Search to discover candidate URLs from the live web without launching a browser for every page.</p>
+                  <p>This keeps discovery fast and cheap while preserving useful metadata like titles, URLs, and result context.</p>
+                </div>
+              </details>
+              <details>
+                <summary>Fetch</summary>
+                <div class="explain-body">
+                  <p>Uses Browserbase Fetch to retrieve page content through Browserbase infrastructure and parse usable text locally.</p>
+                  <p>Fetch is the default path because it avoids browser-session cost when static content is enough.</p>
+                </div>
+              </details>
+              <details>
+                <summary>Browser fallback</summary>
+                <div class="explain-body">
+                  <p>Escalates to Stagehand browser sessions only when a page is dynamic, blocked, too thin, or needs rendered-page extraction.</p>
+                  <p>This makes real browser automation a precision tool instead of the expensive default for every source.</p>
+                </div>
+              </details>
+              <details>
+                <summary>Evidence extraction</summary>
+                <div class="explain-body">
+                  <p>Normalizes accepted pages into source records, extracts claim-level evidence, scores source quality, and keeps retrieval traces.</p>
+                  <p>The output stays inspectable because claims remain connected to source IDs, domains, word counts, and reliability scores.</p>
+                </div>
+              </details>
+              <details>
+                <summary>Synthesis</summary>
+                <div class="explain-body">
+                  <p>Turns the ranked evidence set into an executive brief with key findings, gaps, contradictions, and follow-up questions.</p>
+                  <p>The synthesizer is constrained by gathered evidence, so the UI can show why a conclusion was included.</p>
+                </div>
+              </details>
+              <details open>
+                <summary>Verifier</summary>
+                <div class="explain-body">
+                  <p>The verifier is the trust layer. It evaluates the final brief against an explicit rubric, source coverage, confidence signals, gaps, and process quality.</p>
+                  <p>It is maximally trustworthy for this workflow because it is separate from the synthesis step, uses the collected evidence as its audit surface, and reports a score, pass state, and summary instead of hiding uncertainty.</p>
+                  <div class="trust-note">The verifier does not ask you to blindly trust the answer. It makes the reasons to trust, question, or improve the answer visible.</div>
+                </div>
+              </details>
+            </div>
           </section>
 
           <section class="metrics" aria-label="Run metrics">
