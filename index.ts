@@ -12,6 +12,10 @@ let cachedIndexHtml: string | undefined;
 export default async function handler(request: any, response: any): Promise<void> {
   const url = requestUrl(request);
 
+  if (request.method === "OPTIONS") {
+    return sendEmpty(response, 204);
+  }
+
   if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
     const html = await readIndexHtml();
     return sendHtml(response, 200, html);
@@ -100,14 +104,28 @@ async function readBody(request: any): Promise<string> {
 
 function sendHtml(response: any, statusCode: number, html: string): void {
   response.statusCode = statusCode;
+  setCorsHeaders(response);
   response.setHeader("content-type", "text/html; charset=utf-8");
   response.end(html);
 }
 
 function sendJson(response: any, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
+  setCorsHeaders(response);
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
+}
+
+function sendEmpty(response: any, statusCode: number): void {
+  response.statusCode = statusCode;
+  setCorsHeaders(response);
+  response.end();
+}
+
+function setCorsHeaders(response: any): void {
+  response.setHeader("access-control-allow-origin", "*");
+  response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+  response.setHeader("access-control-allow-headers", "content-type");
 }
 
 function readTopic(body: unknown): string {

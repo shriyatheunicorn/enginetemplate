@@ -186,6 +186,9 @@
       const statusText = document.querySelector("#status");
       const notice = document.querySelector("#notice");
       const results = document.querySelector("#results");
+      const apiBase = window.location.protocol === "file:"
+        ? "https://stagehand-browserbase-deep-research.vercel.app"
+        : "";
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -198,7 +201,7 @@
         results.innerHTML = "";
 
         try {
-          const response = await fetch("/api/research", {
+          const response = await fetch(`${apiBase}/api/research`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ topic }),
@@ -219,7 +222,7 @@
 
       async function checkHealth() {
         try {
-          const response = await fetch("/api/health");
+          const response = await fetch(`${apiBase}/api/health`);
           statusText.textContent = response.ok ? "Ready" : "Unavailable";
         } catch {
           statusText.textContent = "Unavailable";
