@@ -3,14 +3,13 @@
   "version": "1.0.0",
   "description": "Stagehand + Browserbase: deep research pipeline using Search API, Fetch API, and browser-session fallback",
   "type": "module",
-  "main": "index.ts",
   "scripts": {
-    "start": "tsx index.ts",
-    "web": "tsx server.ts",
-    "bench": "tsx index.ts",
-    "dev": "tsx watch index.ts",
-    "dev:web": "tsx watch server.ts",
-    "check": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck index.ts server.ts api/health.ts api/research.ts"
+    "start": "tsx src/research.ts",
+    "web": "tsx src/local-web.ts",
+    "bench": "tsx src/research.ts",
+    "dev": "tsx watch src/research.ts",
+    "dev:web": "tsx watch src/local-web.ts",
+    "check": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck index.ts src/research.ts src/local-web.ts api/health.ts api/research.ts"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.9.0",

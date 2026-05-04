@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { runResearchTask } from "../index.js";
+import { runResearchTask } from "../src/research.js";
 
 export const config = {
   maxDuration: 300,

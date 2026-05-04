@@ -12,3 +12,4 @@ research-workspace/
 *.log
 *.tmp
 .DS_Store
+.vercel

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runResearchTask } from "./index.js";
+import { runResearchTask } from "./research.js";
 
 const PORT = Number.parseInt(process.env.PORT || "3000", 10);
 const MAX_BODY_BYTES = 16_384;
