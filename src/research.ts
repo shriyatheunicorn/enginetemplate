@@ -1960,6 +1960,7 @@ function createStagehand(): Stagehand {
     env: "BROWSERBASE",
     apiKey: process.env.BROWSERBASE_API_KEY,
     verbose: 1,
+    disablePino: true,
     model: RESEARCH_MODEL,
     browserbaseSessionCreateParams: {
       proxies: USE_PROXIES,
