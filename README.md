@@ -150,14 +150,13 @@ This template adapts the AutoBrowse loop from site automation to research:
 - `BENCH_OUTPUT_DIR`: directory for benchmark JSONL and summary files. Default: `bench-output`.
 - `BENCH_SUCCESS_CRITERION`: `outcome`, `process`, or `both`. Default: `outcome`.
 
-## RAILWAY DEPLOYMENT
+## VERCEL DEPLOYMENT
 
-This repo includes a small web server in `server.ts` and a `railway.json` start command.
+This repo includes a static Vercel web UI in `public/index.html` and serverless functions in `api/`.
 
-1. Create a new Railway project from this GitHub repo.
-2. Add `BROWSERBASE_API_KEY` in the Railway service Variables tab.
-3. Start command is already set to `npm run web` by `railway.json`.
-4. For a lower-cost first deploy, set these Railway variables:
+1. Import this GitHub repo in Vercel.
+2. Add `BROWSERBASE_API_KEY` in Project Settings -> Environment Variables.
+3. For a lower-cost first deploy, set these Vercel environment variables:
    - `RESEARCH_ITERATIONS=1`
    - `NUM_QUERIES=2`
    - `RESULTS_PER_QUERY=3`
@@ -168,7 +167,7 @@ This repo includes a small web server in `server.ts` and a `railway.json` start 
    - `USE_BROWSER_SYNTHESIS=false`
    - `USE_VERIFIER=false`
 
-Railway provides `PORT` automatically. The web server exposes `/health` for health checks.
+The Vercel deployment exposes `/api/health` and `/health` for health checks. Generated artifacts are written to `/tmp` while running on Vercel because serverless function filesystems are ephemeral.
 
 ## COMMON PITFALLS
 

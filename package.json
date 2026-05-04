@@ -10,7 +10,7 @@
     "bench": "tsx index.ts",
     "dev": "tsx watch index.ts",
     "dev:web": "tsx watch server.ts",
-    "check": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck index.ts server.ts"
+    "check": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck index.ts server.ts api/health.ts api/research.ts"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.9.0",
