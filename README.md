@@ -1,4 +1,4 @@
-# Stagehand + Browserbase: Deep Research Agent
+# bb research engine
 
 ## AT A GLANCE
 
@@ -33,7 +33,7 @@
 
 ## QUICKSTART
 
-1. cd stagehand-browserbase-deep-research-agent
+1. cd <repo-directory>
 2. npm install
 3. cp .env.example .env
 4. Add BROWSERBASE_API_KEY to .env

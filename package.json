@@ -1,5 +1,5 @@
 {
-  "name": "stagehand-browserbase-deep-research-agent",
+  "name": "bb-research-engine",
   "version": "1.0.0",
   "description": "Stagehand + Browserbase: deep research pipeline using Search API, Fetch API, and browser-session fallback",
   "type": "module",
