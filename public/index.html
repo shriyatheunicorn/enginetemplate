@@ -248,6 +248,7 @@
       }
 
       .command-panel,
+      .brief-panel,
       .panel,
       .metric-card,
       .timeline,
@@ -260,6 +261,30 @@
 
       .command-panel {
         padding: 18px;
+      }
+
+      .brief-panel {
+        padding: 18px;
+        box-shadow: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .brief-panel span {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 850;
+        text-transform: uppercase;
+      }
+
+      .brief-panel h2 {
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .brief-panel p {
+        color: var(--muted);
+        max-width: 1060px;
       }
 
       form {
@@ -626,6 +651,21 @@
               </label>
               <button class="run-button" id="submit" type="submit">Run research</button>
             </form>
+          </section>
+
+          <section class="brief-panel" aria-labelledby="brief-heading">
+            <span>System brief</span>
+            <h2 id="brief-heading">Evidence-first web research, backed by Browserbase</h2>
+            <p>
+              bb research engine turns a research question into a cited, auditable brief by searching the live web,
+              fetching source content, falling back to Browserbase/Stagehand browser sessions when pages are dynamic or
+              blocked, extracting evidence, synthesizing key findings, and scoring the final answer with a verification
+              pass. We find this to be increasingly essential because it moves research from "ask a model and trust it"
+              to a repeatable evidence pipeline where sources, claims, gaps, and confidence are visible. The value prop
+              is that it combines cheap search/fetch workflows with real browser automation only when needed, so teams
+              can produce higher-trust research faster without manually opening dozens of tabs or losing track of why an
+              answer is credible.
+            </p>
           </section>
 
           <section class="metrics" aria-label="Run metrics">
